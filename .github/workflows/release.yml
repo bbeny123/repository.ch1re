@@ -1,0 +1,128 @@
+name: Sync Kodi Repository
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_alpha:
+        description: 'Force rebuild Alpha channel'
+        type: boolean
+        default: false
+      force_release:
+        description: 'Force rebuild Release channel'
+        type: boolean
+        default: false
+      force_stable:
+        description: 'Force rebuild Stable channel'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-kodi-repository
+  cancel-in-progress: false
+
+env:
+  FORK_REPOSITORY: 'bbeny123/skin.arctic.fuse.3'
+  FORK_DIR: 'skin-source'
+  BRANCH_STABLE: 'omega-p3i'
+  HELPER: '.github/workflows/sync_skin.py'
+  GIT_USER_NAME: 'github-actions[bot]'
+  GIT_USER_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kodi repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Checkout skin fork
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.FORK_REPOSITORY }}
+          ref: ${{ env.BRANCH_STABLE }}
+          ssh-key: ${{ secrets.SKIN_REPO_DEPLOY_KEY }}
+          fetch-depth: 0
+          path: ${{ env.FORK_DIR }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Prepare sources
+        run: |
+          git config user.name "$GIT_USER_NAME"
+          git config user.email "$GIT_USER_EMAIL"
+          git -C "$FORK_DIR" config user.name "$GIT_USER_NAME"
+          git -C "$FORK_DIR" config user.email "$GIT_USER_EMAIL"
+          git -C "$FORK_DIR" fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          mkdir -p alpha release stable
+
+      - name: Build Alpha channel
+        id: alpha
+        continue-on-error: true
+        run: >-
+          python3 "$HELPER" alpha
+          --fork-dir "$FORK_DIR"
+          --stable-branch "$BRANCH_STABLE"
+          --scratch-dir "${{ runner.temp }}"
+          ${{ inputs.force_alpha && '--force' || '' }}
+
+      - name: Build Release channel
+        id: release
+        continue-on-error: true
+        run: >-
+          python3 "$HELPER" release
+          --fork-dir "$FORK_DIR"
+          --stable-branch "$BRANCH_STABLE"
+          --scratch-dir "${{ runner.temp }}"
+          ${{ inputs.force_release && '--force' || '' }}
+
+      - name: Build Stable channel
+        id: stable
+        continue-on-error: true
+        run: >-
+          python3 "$HELPER" stable
+          --fork-dir "$FORK_DIR"
+          --stable-branch "$BRANCH_STABLE"
+          --scratch-dir "${{ runner.temp }}"
+          ${{ inputs.force_stable && '--force' || '' }}
+
+      - name: Publish Kodi repository
+        id: publish
+        if: always()
+        run: |
+          git add -A -- alpha release stable
+          if git diff --staged --quiet; then
+            echo "Kodi repository is up to date."
+            exit 0
+          fi
+
+          git commit -m 'auto: update repository channels and manifests'
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Report channel failures
+        if: always()
+        env:
+          ALPHA_OUTCOME: ${{ steps.alpha.outcome }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+          STABLE_OUTCOME: ${{ steps.stable.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          FAILED=()
+          [[ "$ALPHA_OUTCOME" == 'failure' ]] && FAILED+=('Alpha')
+          [[ "$RELEASE_OUTCOME" == 'failure' ]] && FAILED+=('Release')
+          [[ "$STABLE_OUTCOME" == 'failure' ]] && FAILED+=('Stable')
+          [[ "$PUBLISH_OUTCOME" == 'failure' ]] && FAILED+=('publication')
+
+          if (( ${#FAILED[@]} > 0 )); then
+            echo "Failed: ${FAILED[*]}" >&2
+            exit 1
+          fi
