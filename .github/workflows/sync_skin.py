@@ -30,6 +30,7 @@ UPSTREAM_BRANCH = "omega"
 UPSTREAM_REF = f"refs/remotes/upstream/{UPSTREAM_BRANCH}"
 ADDON_ID = "skin.arctic.fuse.3"
 CUSTOM_PROVIDER = "ch1re"
+FORK_MAJOR_OFFSET = 3
 
 ADDON_XML = "addon.xml"
 PO_PATH = "language/resource.language.en_gb/strings.po"
@@ -44,8 +45,14 @@ def split_version(value):
     return match.group("base"), int(match.group("revision") or 0)
 
 
-def next_version(source_version, *existing_versions, suffix=""):
+def fork_base_version(source_version):
     base, _ = split_version(source_version)
+    major, remainder = base.split(".", 1)
+    return f"{int(major) + FORK_MAJOR_OFFSET}.{remainder}"
+
+
+def next_version(source_version, *existing_versions, suffix=""):
+    base = fork_base_version(source_version)
     revisions = []
     for current in filter(None, existing_versions):
         current_base, revision = split_version(current)
@@ -292,7 +299,7 @@ def process_stable(fork_dir, stable_branch, scratch_dir, force):
     source_version = addon_version_at(fork_dir, custom_ref)
 
     # Stable rebuilds when forced, its base changes, or the suffix is missing.
-    if not force and published.endswith("-stable") and split_version(published)[0] == split_version(source_version)[0]:
+    if not force and published.endswith("-stable") and split_version(published)[0] == fork_base_version(source_version):
         print(f"Stable is up to date with {stable_branch}.")
         return
 
