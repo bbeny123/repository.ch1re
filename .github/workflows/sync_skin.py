@@ -25,7 +25,7 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-UPSTREAM_REPO = "https://github.com/jurialmunkey/skin.arctic.fuse.3.git"
+UPSTREAM_REPO = "https://github.com/bbeny123/skin.arctic.fuse.3.git"
 UPSTREAM_BRANCH = "omega"
 UPSTREAM_REF = f"refs/remotes/upstream/{UPSTREAM_BRANCH}"
 ADDON_ID = "skin.arctic.fuse.3"
