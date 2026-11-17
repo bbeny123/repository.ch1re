@@ -93,6 +93,12 @@ def update_addon(path, version):
     tag = f"{tag[:start]}{version}{tag[end:]}"
 
     updated = text[: opening_tag.start()] + tag + text[opening_tag.end():]
+    gui_import = '<import addon="xbmc.gui" version="5.17.0" />'
+    newer_gui_import = '<import addon="xbmc.gui" version="5.18.0" />'
+    if gui_import not in updated:
+        if newer_gui_import not in updated:
+            raise ValueError(f"Missing xbmc.gui import with version 5.17.0 or 5.18.0 in {path}")
+        updated = updated.replace(newer_gui_import, gui_import)
     path.write_text(updated, encoding="utf-8")
 
 
